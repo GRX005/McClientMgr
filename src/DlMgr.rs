@@ -1,16 +1,16 @@
+use crate::utils;
+use anyhow::Result;
 use reqwest::{Client, Error};
 use serde_json::Value;
-use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use anyhow::Result;
-use tokio::join;
 use tokio::task::JoinHandle;
 
+#[derive(PartialEq)]
 enum FileType {
     Lib,
     Native,
     Asset,
-    Mc
+    Mc,
 }
 
 pub async fn getLatestVer(client: &Client) -> Result<(String,String), Error> {
@@ -52,6 +52,7 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
             .unwrap()
             .to_string();
 
+        let mut isNative = false;
         if let Some(rules) = lib["rules"].as_array() {
             let skip = rules.iter().any(|rule| {
                 (rule["action"] == "allow" && rule["os"]["name"]!="windows") || (url.contains("windows-arm64") || url.contains("windows-x86"))
@@ -59,9 +60,12 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
             if skip {
                 continue;
             }
+            if url.contains("natives") {
+                isNative=true;
+            }
         }
 
-        let dl = tokio::spawn(dlFile(client.clone(), url, FileType::Lib));
+        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } ));
         downloaders.push(dl);
     }
 
@@ -74,19 +78,33 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
 async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
     let mut response = client.get(&url).send().await?;
+    // let filename = url.split('/').last().unwrap_or("file").to_string();
+    //
+    // // Grab the task ID to show which Tokio worker is handling this
+    // let task_id = tokio::task::try_id()
+    //     .map(|id| id.to_string())
+    //     .unwrap_or_else(|| "unknown".to_string());
+    // println!("[Task {}] Starting: {}", task_id, filename);
 
     let folder = match ft {
-        FileType::Lib =>"libraries/",
-        FileType::Native =>"natives/",
+        FileType::Lib=>"libraries/",
+        FileType::Native=>"natives/",
         FileType::Asset=>"assets/",
         FileType::Mc=>""
     };
     let path = folder.to_owned()+url.split('/').last().unwrap_or("file");
 
-    let mut file = File::create(path).await?;
+    if ft==FileType::Native {
+        utils::extract_native(response).await?;
+        //println!("[Task {}] Finished extracting: {}", task_id, filename);
+        return Ok(())
+    }
+
+    let mut file = tokio::fs::File::create(path).await?;
 
     while let Some(chunk) = response.chunk().await? {
         file.write_all(&chunk).await?;
     }
+    //println!("[Task {}] Finished download: {}", task_id, filename);
     Ok(())
 }

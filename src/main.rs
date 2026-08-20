@@ -3,11 +3,10 @@
 mod DlMgr;
 mod utils;
 
-use reqwest::{tls, Client, ClientBuilder};
-use std::error::Error;
+use reqwest::{Client, ClientBuilder, tls};
 
 #[tokio::main]
-async fn main() ->Result<(), Box<dyn Error>> {
+async fn main() -> anyhow::Result<(), anyhow::Error> {
     println!("Minecraft Client Manager v{}", env!("CARGO_PKG_VERSION"));
 
     let client = getWebClient();
@@ -17,6 +16,7 @@ async fn main() ->Result<(), Box<dyn Error>> {
     DlMgr::getAndHandleInfo(&client, latVerAndUrl.1).await?;
     Ok(())
 
+    
 }
 
 fn getWebClient() -> Client {
