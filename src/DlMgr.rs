@@ -2,15 +2,17 @@ use crate::utils;
 use anyhow::Result;
 use reqwest::{Client, Error};
 use serde_json::Value;
+use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
 
 #[derive(PartialEq)]
-enum FileType {
+pub enum FileType {
     Lib,
     Native,
     Asset,
-    Mc,
+    AssetIndex,
+    Mc
 }
 
 pub async fn getLatestVer(client: &Client) -> Result<(String,String), Error> {
@@ -39,11 +41,6 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
     let mut downloaders:Vec<JoinHandle<Result<()>>> = Vec::new();
 
-    let assetID = &json["assets"].as_i64();
-    let clientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
-    let dl = tokio::spawn(dlFile(client.clone(), clientUrl, FileType::Mc));
-    downloaders.push(dl);
-
     let libraries = json["libraries"].as_array().unwrap();
 
     for lib in libraries {
@@ -69,6 +66,13 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
         downloaders.push(dl);
     }
 
+    let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
+    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc)));
+
+    let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
+    dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex).await?;
+    utils::getAssets(client.clone(),&mut downloaders).await?;
+
     for dl in downloaders {
         dl.await??;
     }
@@ -76,30 +80,35 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
 }
 
-async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
+pub async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
     let mut response = client.get(&url).send().await?;
     // let filename = url.split('/').last().unwrap_or("file").to_string();
-    //
-    // // Grab the task ID to show which Tokio worker is handling this
-    // let task_id = tokio::task::try_id()
-    //     .map(|id| id.to_string())
-    //     .unwrap_or_else(|| "unknown".to_string());
+    // let task_id = tokio::task::try_id().map(|id| id.to_string()).unwrap_or_else(|| "unknown".to_string());
     // println!("[Task {}] Starting: {}", task_id, filename);
+    let filename = url.split('/').last().unwrap_or("file");
+    let mut path = PathBuf::new();
 
-    let folder = match ft {
-        FileType::Lib=>"libraries/",
-        FileType::Native=>"natives/",
-        FileType::Asset=>"assets/",
-        FileType::Mc=>""
+    match ft {
+        FileType::Lib => path.push("libraries"),
+        FileType::Native => {
+            utils::extract_native(response).await?;
+            //println!("[Task {}] Finished extracting: {}", task_id, filename);
+            return Ok(())
+        },
+        FileType::AssetIndex => path.push("assets\\indexes"),
+        FileType::Asset => {
+            path.push("assets\\objects");
+            let subfolder: String = filename.chars().take(2).collect();
+            path.push(subfolder);
+        },
+        FileType::Mc => {} //Do nothing, keep it in the root folder
     };
-    let path = folder.to_owned()+url.split('/').last().unwrap_or("file");
+    path.push(filename);
+    println!("Downloading: {}", path.display());
 
-    if ft==FileType::Native {
-        utils::extract_native(response).await?;
-        //println!("[Task {}] Finished extracting: {}", task_id, filename);
-        return Ok(())
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
     }
-
     let mut file = tokio::fs::File::create(path).await?;
 
     while let Some(chunk) = response.chunk().await? {

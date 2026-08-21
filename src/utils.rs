@@ -1,18 +1,24 @@
-use reqwest::Response;
+use crate::DlMgr;
+use anyhow::Result;
+use reqwest::{Client, Response};
+use serde_json::Value;
 use std::fs::File;
 use std::io::{Cursor, Error};
 use std::path::Path;
 use std::{fs, io};
+use tokio::task::JoinHandle;
 use zip::ZipArchive;
 
-pub fn makeFolders() ->Result<(), Error> {
+pub fn makeFolders() -> Result<(), Error> {
     fs::create_dir_all("libraries")?;
     fs::create_dir_all("natives")?;
     fs::create_dir_all("assets")?;
+    fs::create_dir_all("assets/indexes")?;
+    fs::create_dir_all("assets/objects")?;
     Ok(())
 }
 
-pub async fn extract_native(response: Response) -> anyhow::Result<()> {
+pub async fn extract_native(response: Response) -> Result<()> {
     let bytes = response.bytes().await?;
     let out_dir = Path::new("natives/");
 
@@ -38,4 +44,22 @@ pub async fn extract_native(response: Response) -> anyhow::Result<()> {
         }
         Ok(())
     }).await?
+}
+
+pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>) -> Result<()> {
+    let entry = tokio::fs::read_dir("assets/indexes/").await?.next_entry().await?.unwrap();
+    let ass = tokio::fs::read_to_string(entry.path()).await?;
+
+    let json: Value = serde_json::from_str(&ass)?;
+    let objs = json["objects"].as_object().unwrap();
+
+    for (_, obj) in objs {
+        let obj_hash = obj["hash"].as_str().unwrap();
+        let url = format!("https://resources.download.minecraft.net/{}/{}", &obj_hash[..2], obj_hash);
+
+        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, DlMgr::FileType::Asset)))
+    }
+
+    Ok(())
+
 }
