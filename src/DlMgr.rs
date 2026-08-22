@@ -1,19 +1,10 @@
-use crate::utils;
+use crate::{FileType, utils};
 use anyhow::Result;
 use reqwest::{Client, Error};
 use serde_json::Value;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
-
-#[derive(PartialEq)]
-pub enum FileType {
-    Lib,
-    Native,
-    Asset,
-    AssetIndex,
-    Mc
-}
 
 pub async fn getLatestVer(client: &Client) -> Result<(String,String), Error> {
     let json: Value = client
@@ -82,9 +73,6 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
 pub async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
     let mut response = client.get(&url).send().await?;
-    // let filename = url.split('/').last().unwrap_or("file").to_string();
-    // let task_id = tokio::task::try_id().map(|id| id.to_string()).unwrap_or_else(|| "unknown".to_string());
-    // println!("[Task {}] Starting: {}", task_id, filename);
     let filename = url.split('/').last().unwrap_or("file");
     let mut path = PathBuf::new();
 
@@ -92,7 +80,6 @@ pub async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
         FileType::Lib => path.push("libraries"),
         FileType::Native => {
             utils::extract_native(response).await?;
-            //println!("[Task {}] Finished extracting: {}", task_id, filename);
             return Ok(())
         },
         FileType::AssetIndex => path.push("assets\\indexes"),
@@ -101,19 +88,14 @@ pub async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
             let subfolder: String = filename.chars().take(2).collect();
             path.push(subfolder);
         },
-        FileType::Mc => {} //Do nothing, keep it in the root folder
+        FileType::Mc => {}
     };
     path.push(filename);
-    println!("Downloading: {}", path.display());
 
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
     let mut file = tokio::fs::File::create(path).await?;
 
     while let Some(chunk) = response.chunk().await? {
         file.write_all(&chunk).await?;
     }
-    //println!("[Task {}] Finished download: {}", task_id, filename);
     Ok(())
 }

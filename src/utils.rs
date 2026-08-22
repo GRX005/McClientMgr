@@ -1,4 +1,4 @@
-use crate::DlMgr;
+use crate::{DlMgr, FileType};
 use anyhow::Result;
 use reqwest::{Client, Response};
 use serde_json::Value;
@@ -15,6 +15,11 @@ pub fn makeFolders() -> Result<(), Error> {
     fs::create_dir_all("assets")?;
     fs::create_dir_all("assets/indexes")?;
     fs::create_dir_all("assets/objects")?;
+
+    for i in 0u8..=255 {
+        let dir = format!("assets/objects/{:02x}", i);
+        fs::create_dir_all(dir)?;
+    }
     Ok(())
 }
 
@@ -57,7 +62,7 @@ pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<(
         let obj_hash = obj["hash"].as_str().unwrap();
         let url = format!("https://resources.download.minecraft.net/{}/{}", &obj_hash[..2], obj_hash);
 
-        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, DlMgr::FileType::Asset)))
+        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset)))
     }
 
     Ok(())
