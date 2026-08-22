@@ -1,6 +1,6 @@
 use crate::{FileType, utils};
-use anyhow::Result;
-use reqwest::{Client, Error};
+use anyhow::{Error, Result};
+use reqwest::Client;
 use serde_json::Value;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;

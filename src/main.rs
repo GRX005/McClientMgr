@@ -4,6 +4,7 @@ mod DlMgr;
 mod utils;
 
 use reqwest::{Client, ClientBuilder, tls};
+use tokio::try_join;
 
 #[derive(PartialEq)]
 pub enum FileType {
@@ -15,12 +16,14 @@ pub enum FileType {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<(), anyhow::Error> {
+async fn main() -> anyhow::Result<()> {
     println!("Minecraft Client Manager v{}", env!("CARGO_PKG_VERSION"));
     let client = getWebClient();
-    let latVerAndUrl = DlMgr::getLatestVer(&client).await?;
-    utils::makeFolders()?;
-    println!("{}",latVerAndUrl.1);
+    let (latVerAndUrl, _) = try_join!(
+        DlMgr::getLatestVer(&client),
+        utils::makeFolders()
+    )?;
+    println!("Latest version: {}; URL: {}",latVerAndUrl.0,latVerAndUrl.1);
     DlMgr::getAndHandleInfo(&client, latVerAndUrl.1).await?;
     Ok(())
 }

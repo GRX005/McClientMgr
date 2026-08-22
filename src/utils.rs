@@ -1,26 +1,27 @@
 use crate::{DlMgr, FileType};
-use anyhow::Result;
+use anyhow::{Error, Result};
 use reqwest::{Client, Response};
 use serde_json::Value;
 use std::fs::File;
-use std::io::{Cursor, Error};
+use std::io::Cursor;
 use std::path::Path;
 use std::{fs, io};
 use tokio::task::JoinHandle;
 use zip::ZipArchive;
 
-pub fn makeFolders() -> Result<(), Error> {
-    fs::create_dir_all("libraries")?;
-    fs::create_dir_all("natives")?;
-    fs::create_dir_all("assets")?;
-    fs::create_dir_all("assets/indexes")?;
-    fs::create_dir_all("assets/objects")?;
+pub async fn makeFolders() -> Result<(), Error> {
+    tokio::task::spawn_blocking(|| {
+        fs::create_dir_all("libraries")?;
+        fs::create_dir_all("natives")?;
+        fs::create_dir_all("assets/indexes")?;
+        fs::create_dir_all("assets/objects")?;
 
-    for i in 0u8..=255 {
-        let dir = format!("assets/objects/{:02x}", i);
-        fs::create_dir_all(dir)?;
-    }
-    Ok(())
+        for i in 0u8..=255 {
+            fs::create_dir_all(format!("assets/objects/{:02x}", i))?;
+        }
+
+        Ok(())
+    }).await?
 }
 
 pub async fn extract_native(response: Response) -> Result<()> {
