@@ -32,6 +32,9 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
     let mut downloaders:Vec<JoinHandle<Result<()>>> = Vec::new();
 
+    let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
+    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc)));
+
     let libraries = json["libraries"].as_array().unwrap();
 
     for lib in libraries {
@@ -56,9 +59,6 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
         let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } ));
         downloaders.push(dl);
     }
-
-    let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
-    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc)));
 
     let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
     dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex).await?;
