@@ -33,7 +33,9 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
     let mut downloaders:Vec<JoinHandle<Result<()>>> = Vec::new();
 
     let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
-    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc)));
+    let version = json["id"].as_str().unwrap().to_string();
+
+    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version))));
 
     let libraries = json["libraries"].as_array().unwrap();
 
@@ -71,26 +73,38 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
 }
 
-pub async fn dlFile(client: Client, url: String, ft: FileType)->Result<()> {
+pub async fn dlFile(client: Client, url: String, ft: FileType) -> Result<()> {
     let mut response = client.get(&url).send().await?;
-    let filename = url.split('/').last().unwrap_or("file");
+
+    let raw_filename = url.rsplit('/').next().unwrap_or("file");
     let mut path = PathBuf::new();
 
     match ft {
-        FileType::Lib => path.push("libraries"),
+        FileType::Lib => {
+            path.push("libraries");
+            path.push(raw_filename);
+        }
         FileType::Native => {
             utils::extract_native(response).await?;
-            return Ok(())
-        },
-        FileType::AssetIndex => path.push("assets\\indexes"),
+            return Ok(());
+        }
+        FileType::AssetIndex => {
+            path.push("assets");
+            path.push("indexes");
+            path.push(raw_filename);
+        }
         FileType::Asset => {
-            path.push("assets\\objects");
-            let subfolder: String = filename.chars().take(2).collect();
+            path.push("assets");
+            path.push("objects");
+            let subfolder = raw_filename.get(..2).unwrap();
             path.push(subfolder);
-        },
-        FileType::Mc => {}
-    };
-    path.push(filename);
+            path.push(raw_filename);
+        }
+        FileType::Mc(ver) => {
+            let base = raw_filename.split(".").next().unwrap();
+            path.push(format!("{ver}-{base}.jar"));
+        }
+    }
 
     let mut file = tokio::fs::File::create(path).await?;
 

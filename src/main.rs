@@ -5,7 +5,9 @@ mod utils;
 
 use anyhow::{Context, bail};
 use reqwest::{Client, ClientBuilder, tls};
-use std::env;
+use std::{env, fs};
+use std::ffi::{OsStr, OsString};
+use std::path::Path;
 use std::process::Command;
 use tokio::try_join;
 use uuid::Uuid;
@@ -16,12 +18,13 @@ pub enum FileType {
     Native,
     Asset,
     AssetIndex,
-    Mc
+    Mc(String)
 }
+const VERSION:&str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("Minecraft Client Manager v{}", env!("CARGO_PKG_VERSION"));
+    println!("Minecraft Client Manager v{}", VERSION);
     let client = getWebClient();
     let (latVerAndUrl, _) = try_join!(
         DlMgr::getLatestVer(&client),
@@ -45,10 +48,12 @@ fn launchGame()->anyhow::Result<()> {
     let assets_dir = current_dir.join("assets");
     let cp_sep = if cfg!(windows) { ";" } else { ":" };
 
+    let clientName = getMcClient()?;
+
     let class_path = format!(
         "{}{cp_sep}{}",
         current_dir.join("libraries").join("*").display(),
-        current_dir.join("client.jar").display()
+        current_dir.join(&clientName).display()
     );
 
     const LAUNCHER_BRAND: &str = "McClientMgr";
@@ -64,12 +69,12 @@ fn launchGame()->anyhow::Result<()> {
             "-XX:+AlwaysPreTouch",
             "-XX:+UseStringDeduplication",
             "-XX:+UseZGC",
-            "-Dminecraft.launcher.version=1.7",
             "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump",
             "-Xss1M",
         ])
         .args([
             // native library system properties
+            format!("-Dminecraft.launcher.version={}", VERSION),
             format!("-Djava.library.path={}", natives.display()),
             format!("-Djna.tmpdir={}", natives.display()),
             format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", natives.display()),
@@ -83,13 +88,13 @@ fn launchGame()->anyhow::Result<()> {
             "--uuid", &Uuid::new_v4().to_string(),
             "--clientId", LAUNCHER_BRAND,
             "--xuid", LAUNCHER_BRAND,
-            "--version", "26.2",
-            "--versionType", LAUNCHER_BRAND,
+            "--versionType", "release",
+            "--accessToken", LAUNCHER_BRAND,
         ])
         .arg("--gameDir").arg(game_dir)
         .arg("--assetsDir").arg(assets_dir)
-        .args(["--assetIndex", "32"])
-        .args(["--accessToken", LAUNCHER_BRAND])
+        .arg("--assetIndex").arg(getAssetIndex()?)
+        .arg("--version").arg(clientName.split("-").next().unwrap())
         .status()?;
 
     if !status.success(){
@@ -99,3 +104,16 @@ fn launchGame()->anyhow::Result<()> {
     Ok(())
 }
 
+fn getAssetIndex() -> anyhow::Result<String> {
+    let entry = fs::read_dir("assets/indexes/")?.next().unwrap()?.file_name();
+    let name = entry.to_string_lossy().split(".").next().unwrap().to_string();
+    Ok(name)
+}
+
+fn getMcClient() -> anyhow::Result<String> {
+    let jarName = fs::read_dir(".")?
+        .filter_map(Result::ok)
+        .map(|e| e.file_name())
+        .find(|name| Path::new(name).extension() == Some(OsStr::new("jar"))).unwrap();
+    Ok(jarName.to_string_lossy().into_owned())
+}
