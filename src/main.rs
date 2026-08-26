@@ -3,12 +3,12 @@
 mod DlMgr;
 mod utils;
 
-use anyhow::{Context, bail};
+use anyhow::bail;
 use reqwest::{Client, ClientBuilder, tls};
-use std::{env, fs};
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;
+use std::{env, fs};
 use tokio::try_join;
 use uuid::Uuid;
 
@@ -25,6 +25,10 @@ const VERSION:&str = env!("CARGO_PKG_VERSION");
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("Minecraft Client Manager v{}", VERSION);
+    if let Some(clientName) = getMcClient() {
+        launchGame(clientName)?;
+        return Ok(())
+    }
     let client = getWebClient();
     let (latVerAndUrl, _) = try_join!(
         DlMgr::getLatestVer(&client),
@@ -32,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     )?;
     println!("Latest version: {}; URL: {}",latVerAndUrl.0,latVerAndUrl.1);
     DlMgr::getAndHandleInfo(&client, latVerAndUrl.1).await?;
-    launchGame()?;
+    launchGame(getMcClient().unwrap())?;
     Ok(())
 }
 
@@ -40,21 +44,23 @@ fn getWebClient() -> Client {
     ClientBuilder::new().user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))).min_tls_version(tls::Version::TLS_1_3).https_only(true).build().unwrap()
 }
 
-fn launchGame()->anyhow::Result<()> {
-    let current_dir = env::current_dir().context("Failed to get current directory")?;
+fn launchGame(clientName:String)->anyhow::Result<()> {
+    let assetIndex = getAssetIndex()?;
+    let clientVersion = clientName.split("-").next().unwrap();
+    println!("Launcing MC version {} with assetIndex {}...", clientVersion, assetIndex);
 
-    let natives = current_dir.join("natives");
-    let game_dir = current_dir.join("MC");
-    let assets_dir = current_dir.join("assets");
+    let current_dir = env::current_dir()?;
+
     let cp_sep = if cfg!(windows) { ";" } else { ":" };
-
-    let clientName = getMcClient()?;
-
     let class_path = format!(
         "{}{cp_sep}{}",
         current_dir.join("libraries").join("*").display(),
         current_dir.join(&clientName).display()
     );
+
+    let natives = current_dir.join("natives");
+    let game_dir = current_dir.join("MC");
+    let assets_dir = current_dir.join("assets");
 
     const LAUNCHER_BRAND: &str = "McClientMgr";
 
@@ -93,8 +99,8 @@ fn launchGame()->anyhow::Result<()> {
         ])
         .arg("--gameDir").arg(game_dir)
         .arg("--assetsDir").arg(assets_dir)
-        .arg("--assetIndex").arg(getAssetIndex()?)
-        .arg("--version").arg(clientName.split("-").next().unwrap())
+        .arg("--assetIndex").arg(assetIndex)
+        .arg("--version").arg(clientVersion)
         .status()?;
 
     if !status.success(){
@@ -110,10 +116,10 @@ fn getAssetIndex() -> anyhow::Result<String> {
     Ok(name)
 }
 
-fn getMcClient() -> anyhow::Result<String> {
-    let jarName = fs::read_dir(".")?
+fn getMcClient() -> Option<String> {
+    let jarName = fs::read_dir(".").unwrap()
         .filter_map(Result::ok)
         .map(|e| e.file_name())
-        .find(|name| Path::new(name).extension() == Some(OsStr::new("jar"))).unwrap();
-    Ok(jarName.to_string_lossy().into_owned())
+        .find(|name| Path::new(name).extension() == Some(OsStr::new("jar")))?;
+    Some(jarName.to_string_lossy().into_owned())
 }
