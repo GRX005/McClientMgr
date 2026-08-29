@@ -6,22 +6,24 @@ use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
 
-pub async fn getLatestVer(client: &Client) -> Result<(String,String), Error> {
+pub async fn getVersionInfo(client: &Client, mut ver:String)->Option<String> {
     let json: Value = client
         .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
-        .send().await?
-        .json().await?;
+        .send().await.unwrap()
+        .json().await.unwrap();
 
-    let latest = json["latest"]["release"].as_str().unwrap().to_string();
+    if ver.is_empty() {
+        ver = json["latest"]["release"].as_str()?.to_string();
+    }
 
     let dlUrl = json["versions"]
-        .as_array().unwrap()
+        .as_array()?
         .iter()
-        .find(|v| v["id"] == latest)
-        .unwrap()["url"]
-        .as_str().unwrap()
+        .find(|v| v["id"] == ver)?
+        ["url"]
+        .as_str()?
         .to_string();
-    Ok((latest, dlUrl))
+    Some(dlUrl)
 }
 
 pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {

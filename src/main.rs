@@ -29,13 +29,20 @@ async fn main() -> anyhow::Result<()> {
         launchGame(clientName)?;
         return Ok(())
     }
+
     let client = getWebClient();
-    let (latVerAndUrl, _) = try_join!(
-        DlMgr::getLatestVer(&client),
-        utils::makeFolders()
-    )?;
-    println!("Latest version: {}; URL: {}",latVerAndUrl.0,latVerAndUrl.1);
-    DlMgr::getAndHandleInfo(&client, latVerAndUrl.1).await?;
+    let url = loop {
+        let ver = utils::getVer()?;
+        if let Some(v) = DlMgr::getVersionInfo(&client, ver).await {
+            break v;
+        }
+        println!("Invalid version.");
+    };
+
+    utils::makeFolders().await?;
+    println!("URL: {}",url);
+
+    DlMgr::getAndHandleInfo(&client, url).await?;
     launchGame(getMcClient().unwrap())?;
     Ok(())
 }

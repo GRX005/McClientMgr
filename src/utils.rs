@@ -3,13 +3,13 @@ use anyhow::{Error, Result};
 use reqwest::{Client, Response};
 use serde_json::Value;
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{stdout, Cursor, Write, stdin};
 use std::path::Path;
 use std::{fs, io};
 use tokio::task::JoinHandle;
 use zip::ZipArchive;
 
-pub async fn makeFolders() -> Result<(), Error> {
+pub async fn makeFolders() -> Result<()> {
     tokio::task::spawn_blocking(|| {
         fs::create_dir_all("libraries")?;
         fs::create_dir_all("natives")?;
@@ -68,4 +68,21 @@ pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<(
 
     Ok(())
 
+}
+
+pub fn getVer()->Result<String> {
+    let mut input;
+    loop {
+        print!("Version to download ({}): ","latest");
+        stdout().flush()?;
+        input = String::new();
+        stdin().read_line(&mut input)?;
+        input = input.trim().to_string();
+        if input.bytes().all(|b| matches!(b, b'0'..=b'9' | b'.' | b'-' | b'a'..=b'z' | b'A'..=b'Z')) {
+            break
+        }
+        println!("Invalid character!");
+    }
+    println!("Getting version information...");
+    Ok(input)
 }
