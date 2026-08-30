@@ -1,5 +1,5 @@
 use crate::{FileType, utils};
-use anyhow::{Error, Result};
+use anyhow::Result;
 use reqwest::Client;
 use serde_json::Value;
 use std::path::PathBuf;

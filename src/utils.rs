@@ -1,9 +1,9 @@
 use crate::{DlMgr, FileType};
-use anyhow::{Error, Result};
+use anyhow::Result;
 use reqwest::{Client, Response};
 use serde_json::Value;
 use std::fs::File;
-use std::io::{stdout, Cursor, Write, stdin};
+use std::io::{Cursor, Write, stdin, stdout};
 use std::path::Path;
 use std::{fs, io};
 use tokio::task::JoinHandle;
