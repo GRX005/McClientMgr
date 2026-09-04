@@ -28,6 +28,7 @@ use reqwest::{Client, ClientBuilder, tls};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;
+use std::time::Instant;
 use std::{env, fs};
 use uuid::Uuid;
 
@@ -60,8 +61,10 @@ async fn main() -> anyhow::Result<()> {
 
     utils::makeFolders().await?;
     println!("URL: {}",url);
-
+    let start = Instant::now();
     DlMgr::getAndHandleInfo(&client, url).await?;
+    let duration = start.elapsed();
+    println!("Took: {:?}", duration);
     launchGame(getMcClient().unwrap())?;
     Ok(())
 }

@@ -23,7 +23,9 @@ use anyhow::Result;
 use reqwest::Client;
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
 pub async fn getVersionInfo(client: &Client, mut ver:String)->Option<String> {
@@ -54,10 +56,12 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
 
     let mut downloaders:Vec<JoinHandle<Result<()>>> = Vec::new();
 
+    let semaphore = Arc::new(Semaphore::new(50));
+
     let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
     let version = json["id"].as_str().unwrap().to_string();
 
-    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version))));
+    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version), semaphore.clone())));
 
     let libraries = json["libraries"].as_array().unwrap();
 
@@ -80,22 +84,23 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
             }
         }
 
-        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } ));
+        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } , semaphore.clone()));
         downloaders.push(dl);
     }
 
     let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
-    dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex).await?;
-    utils::getAssets(client.clone(),&mut downloaders).await?;
+    dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex, semaphore.clone()).await?;
+    utils::getAssets(client.clone(),&mut downloaders, semaphore.clone()).await?;
 
     for dl in downloaders {
         dl.await??;
     }
     Ok(())
-
 }
 
-pub async fn dlFile(client: Client, url: String, ft: FileType) -> Result<()> {
+pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Semaphore>) -> Result<()> {
+    let _permit = semaphore.acquire().await?;
+
     let mut response = client.get(&url).send().await?;
 
     let raw_filename = url.rsplit('/').next().unwrap_or("file");

@@ -25,7 +25,9 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{Cursor, Write, stdin, stdout};
 use std::path::Path;
+use std::sync::Arc;
 use std::{fs, io};
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use zip::ZipArchive;
 
@@ -72,7 +74,7 @@ pub async fn extract_native(response: Response) -> Result<()> {
     }).await?
 }
 
-pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>) -> Result<()> {
+pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>) -> Result<()> {
     let entry = tokio::fs::read_dir("assets/indexes/").await?.next_entry().await?.unwrap();
     let ass = tokio::fs::read_to_string(entry.path()).await?;
 
@@ -83,7 +85,7 @@ pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<(
         let obj_hash = obj["hash"].as_str().unwrap();
         let url = format!("https://resources.download.minecraft.net/{}/{}", &obj_hash[..2], obj_hash);
 
-        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset)))
+        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset, semaphore.clone())))
     }
 
     Ok(())
