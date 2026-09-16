@@ -20,7 +20,8 @@
 
 use crate::{DlMgr, FileType};
 use anyhow::Result;
-use reqwest::{Client, Response};
+use indicatif::ProgressBar;
+use reqwest::Client;
 use serde_json::Value;
 use std::fs::File;
 use std::io::{Cursor, Write, stdin, stdout};
@@ -46,8 +47,7 @@ pub async fn makeFolders() -> Result<()> {
     }).await?
 }
 
-pub async fn extract_native(response: Response) -> Result<()> {
-    let bytes = response.bytes().await?;
+pub async fn extract_native(bytes: Vec<u8>) -> Result<()> {
     let out_dir = Path::new("natives/");
 
     tokio::task::spawn_blocking(move || {
@@ -74,18 +74,21 @@ pub async fn extract_native(response: Response) -> Result<()> {
     }).await?
 }
 
-pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>) -> Result<()> {
+pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>, pb: ProgressBar) -> Result<()> {
     let entry = tokio::fs::read_dir("assets/indexes/").await?.next_entry().await?.unwrap();
     let ass = tokio::fs::read_to_string(entry.path()).await?;
 
     let json: Value = serde_json::from_str(&ass)?;
     let objs = json["objects"].as_object().unwrap();
 
+    let total_assets_size: u64 = objs.values().map(|obj| obj["size"].as_u64().unwrap_or(0)).sum();
+    pb.inc_length(total_assets_size);
+
     for (_, obj) in objs {
         let obj_hash = obj["hash"].as_str().unwrap();
         let url = format!("https://resources.download.minecraft.net/{}/{}", &obj_hash[..2], obj_hash);
 
-        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset, semaphore.clone())))
+        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset, semaphore.clone(), pb.clone())))
     }
 
     Ok(())

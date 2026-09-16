@@ -20,6 +20,7 @@
 
 use crate::{FileType, utils};
 use anyhow::Result;
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -57,11 +58,18 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
     let mut downloaders:Vec<JoinHandle<Result<()>>> = Vec::new();
 
     let semaphore = Arc::new(Semaphore::new(50));
+    let pb = ProgressBar::new(0);
+    pb.set_style(ProgressStyle::with_template(
+        "[{elapsed_precise}] {bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} ({bytes_per_sec}) {msg}"
+    )?.progress_chars("##-"));
+    pb.set_message("Downloading...");
 
     let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
+    let clientSize = json["downloads"]["client"]["size"].as_u64().unwrap_or(0);
     let version = json["id"].as_str().unwrap().to_string();
 
-    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version), semaphore.clone())));
+    pb.inc_length(clientSize);
+    downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version), semaphore.clone(), pb.clone())));
 
     let libraries = json["libraries"].as_array().unwrap();
 
@@ -70,6 +78,7 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
             .as_str()
             .unwrap()
             .to_string();
+        let libSize = lib["downloads"]["artifact"]["size"].as_u64().unwrap_or(0);
 
         let mut isNative = false;
         if let Some(rules) = lib["rules"].as_array() {
@@ -83,26 +92,30 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
                 isNative=true;
             }
         }
-
-        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } , semaphore.clone()));
+        pb.inc_length(libSize);
+        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } , semaphore.clone(), pb.clone()));
         downloaders.push(dl);
     }
 
     let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
-    dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex, semaphore.clone()).await?;
-    utils::getAssets(client.clone(),&mut downloaders, semaphore.clone()).await?;
+    let indexSize = json["assetIndex"]["size"].as_u64().unwrap_or(0);
+
+    pb.inc_length(indexSize);
+    dlFile(client.clone(), assetsIndexUrl, FileType::AssetIndex, semaphore.clone(), pb.clone()).await?;
+    utils::getAssets(client.clone(),&mut downloaders, semaphore.clone(), pb.clone()).await?;
 
     for dl in downloaders {
         dl.await??;
     }
+
+    pb.finish_with_message("Download complete!");
     Ok(())
 }
 
-pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Semaphore>) -> Result<()> {
+pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Semaphore>, pb: ProgressBar) -> Result<()> {
     let _permit = semaphore.acquire().await?;
 
     let mut response = client.get(&url).send().await?;
-
     let raw_filename = url.rsplit('/').next().unwrap_or("file");
     let mut path = PathBuf::new();
 
@@ -112,7 +125,12 @@ pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Se
             path.push(raw_filename);
         }
         FileType::Native => {
-            utils::extract_native(response).await?;
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                bytes.extend_from_slice(&chunk);
+                pb.inc(chunk.len() as u64); // Update progress byte-by-byte
+            }
+            utils::extract_native(bytes).await?;
             return Ok(());
         }
         FileType::AssetIndex => {
@@ -137,6 +155,7 @@ pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Se
 
     while let Some(chunk) = response.chunk().await? {
         file.write_all(&chunk).await?;
+        pb.inc(chunk.len() as u64);
     }
     Ok(())
 }
