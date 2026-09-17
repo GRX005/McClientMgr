@@ -28,8 +28,9 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
+use crate::utils::getLibraries;
 
-pub async fn getVersionInfo(client: &Client, mut ver:String)->Option<String> {
+pub async fn getVersionInfo(client: &Client, mut ver:String) ->Option<String> {
     let json: Value = client
         .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
         .send().await.unwrap()
@@ -60,9 +61,9 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
     let semaphore = Arc::new(Semaphore::new(50));
     let pb = ProgressBar::new(0);
     pb.set_style(ProgressStyle::with_template(
-        "[{elapsed_precise}] {bar:40.cyan/blue} {bytes:>7}/{total_bytes:7} ({bytes_per_sec}) {msg}"
-    )?.progress_chars("##-"));
-    pb.set_message("Downloading...");
+        "{msg} [{bar:40.green/blue}] {bytes:>7}/{total_bytes:7} ({bytes_per_sec}) [{elapsed}]"
+    )?.progress_chars("#>-"));
+    pb.set_message("Downloading MC...");
 
     let mcClientUrl = json["downloads"]["client"]["url"].as_str().unwrap().to_string();
     let clientSize = json["downloads"]["client"]["size"].as_u64().unwrap_or(0);
@@ -71,31 +72,7 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
     pb.inc_length(clientSize);
     downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version), semaphore.clone(), pb.clone())));
 
-    let libraries = json["libraries"].as_array().unwrap();
-
-    for lib in libraries {
-        let url = lib["downloads"]["artifact"]["url"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        let libSize = lib["downloads"]["artifact"]["size"].as_u64().unwrap_or(0);
-
-        let mut isNative = false;
-        if let Some(rules) = lib["rules"].as_array() {
-            let skip = rules.iter().any(|rule| {
-                (rule["action"] == "allow" && rule["os"]["name"]!="windows") || (url.contains("windows-arm64") || url.contains("windows-x86"))
-            });
-            if skip {
-                continue;
-            }
-            if url.contains("natives") {
-                isNative=true;
-            }
-        }
-        pb.inc_length(libSize);
-        let dl = tokio::spawn(dlFile(client.clone(), url, if isNative { FileType::Native } else { FileType::Lib } , semaphore.clone(), pb.clone()));
-        downloaders.push(dl);
-    }
+    getLibraries(client.clone(),&mut downloaders, semaphore.clone(), pb.clone(), &json).await;
 
     let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
     let indexSize = json["assetIndex"]["size"].as_u64().unwrap_or(0);

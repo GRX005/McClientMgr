@@ -31,6 +31,7 @@ use std::{fs, io};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use zip::ZipArchive;
+use crate::DlMgr::dlFile;
 
 pub async fn makeFolders() -> Result<()> {
     tokio::task::spawn_blocking(|| {
@@ -110,4 +111,32 @@ pub fn getVer()->Result<String> {
     }
     println!("Getting version information...");
     Ok(input)
+}
+
+pub async fn getLibraries(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>, pb: ProgressBar, json: &Value) {
+    let libraries = json["libraries"].as_array().unwrap();
+
+    for lib in libraries {
+        let url = lib["downloads"]["artifact"]["url"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let libSize = lib["downloads"]["artifact"]["size"].as_u64().unwrap_or(0);
+
+        let mut nativeNeedExtract = false;
+        if let Some(rules) = lib["rules"].as_array() {
+            let skip = rules.iter().any(|rule| {
+                (rule["action"] == "allow" && rule["os"]["name"]!="windows") || (url.contains("windows-arm64") || url.contains("windows-x86"))
+            });
+            if skip {
+                continue;
+            }
+            if url.contains("natives") {
+                nativeNeedExtract =true;
+            }
+        }
+        pb.inc_length(libSize);
+        let dl = tokio::spawn(dlFile(client.clone(), url, if nativeNeedExtract { FileType::Native } else { FileType::Lib }, semaphore.clone(), pb.clone()));
+        downloaders.push(dl);
+    }
 }

@@ -45,6 +45,7 @@ const VERSION:&str = env!("CARGO_PKG_VERSION");
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("Minecraft Client Manager v{}", VERSION);
+    tempDel();
     if let Some(clientName) = getMcClient() {
         launchGame(clientName)?;
         return Ok(())
@@ -98,23 +99,25 @@ fn launchGame(clientName:String)->anyhow::Result<()> {
             // memory / JVM tuning
             "-Xms2G",
             "-Xmx4G",
-            "--sun-misc-unsafe-memory-access=allow",
             "--enable-native-access=ALL-UNNAMED",
             "-XX:+UseCompactObjectHeaders",
             "-XX:+AlwaysPreTouch",
             "-XX:+UseStringDeduplication",
             "-XX:+UseZGC",
+            "-XX:StackShadowPages=32",
             "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump",
             "-Xss1M",
+            "--add-exports",
+            "java.base/jdk.internal.misc=ALL-UNNAMED"
         ])
         .args([
             // native library system properties
-            format!("-Dminecraft.launcher.version={}", VERSION),
-            format!("-Djava.library.path={}", natives.display()),
-            format!("-Djna.tmpdir={}", natives.display()),
-            format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", natives.display()),
-            format!("-Dio.netty.native.workdir={}", natives.display()),
+            format!("-Djava.library.path={}", natives.join("java").display()),
+            format!("-Djna.tmpdir={}", natives.join("jna").display()),
+            format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", natives.join("lwjgl").display()),
+            format!("-Dio.netty.native.workdir={}", natives.join("netty").display()),
             format!("-Dminecraft.launcher.brand={}", LAUNCHER_BRAND),
+            format!("-Dminecraft.launcher.version={}", VERSION)
         ])
         .args(["-cp", &class_path])
         .arg("net.minecraft.client.main.Main")
@@ -141,7 +144,7 @@ fn launchGame(clientName:String)->anyhow::Result<()> {
 
 fn getAssetIndex() -> anyhow::Result<String> {
     let entry = fs::read_dir("assets/indexes/")?.next().unwrap()?.file_name();
-    let name = entry.to_string_lossy().split(".").next().unwrap().to_string();
+    let name = entry.to_string_lossy().strip_suffix(".json").unwrap().to_string();
     Ok(name)
 }
 
@@ -151,4 +154,16 @@ fn getMcClient() -> Option<String> {
         .map(|e| e.file_name())
         .find(|name| Path::new(name).extension() == Some(OsStr::new("jar")))?;
     Some(jarName.to_string_lossy().into_owned())
+}
+
+pub fn tempDel() {
+    if let Some(mcClient)=getMcClient() {
+        fs::remove_dir_all("libraries").unwrap();
+        fs::remove_dir_all("natives").unwrap();
+        fs::remove_dir_all("assets/indexes").unwrap();
+        fs::remove_dir_all("assets/objects").unwrap();
+
+        fs::remove_file(mcClient).unwrap();
+    }
+
 }
