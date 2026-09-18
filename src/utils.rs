@@ -113,7 +113,7 @@ pub fn getVer()->Result<String> {
     Ok(input)
 }
 
-pub async fn getLibraries(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>, pb: ProgressBar, json: &Value) {
+pub fn getLibraries(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>>, semaphore: Arc<Semaphore>, pb: ProgressBar, json: &Value) {
     let libraries = json["libraries"].as_array().unwrap();
 
     for lib in libraries {

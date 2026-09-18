@@ -72,7 +72,7 @@ pub async fn getAndHandleInfo(client: &Client, url: String) -> Result<()> {
     pb.inc_length(clientSize);
     downloaders.push(tokio::spawn(dlFile(client.clone(), mcClientUrl, FileType::Mc(version), semaphore.clone(), pb.clone())));
 
-    getLibraries(client.clone(),&mut downloaders, semaphore.clone(), pb.clone(), &json).await;
+    getLibraries(client.clone(),&mut downloaders, semaphore.clone(), pb.clone(), &json);
 
     let assetsIndexUrl = json["assetIndex"]["url"].as_str().unwrap().to_string();
     let indexSize = json["assetIndex"]["size"].as_u64().unwrap_or(0);
