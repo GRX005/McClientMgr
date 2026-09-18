@@ -18,6 +18,7 @@
     along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
+use crate::utils::getLibraries;
 use crate::{FileType, utils};
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -28,7 +29,6 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
-use crate::utils::getLibraries;
 
 pub async fn getVersionInfo(client: &Client, mut ver:String) ->Option<String> {
     let json: Value = client
@@ -100,15 +100,6 @@ pub async fn dlFile(client: Client, url: String, ft: FileType, semaphore: Arc<Se
         FileType::Lib => {
             path.push("libraries");
             path.push(raw_filename);
-        }
-        FileType::Native => {
-            let mut bytes = Vec::new();
-            while let Some(chunk) = response.chunk().await? {
-                bytes.extend_from_slice(&chunk);
-                pb.inc(chunk.len() as u64); // Update progress byte-by-byte
-            }
-            utils::extract_native(bytes).await?;
-            return Ok(());
         }
         FileType::AssetIndex => {
             path.push("assets");

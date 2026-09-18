@@ -23,19 +23,16 @@
 mod DlMgr;
 mod utils;
 
-use anyhow::bail;
 use reqwest::{Client, ClientBuilder, tls};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;
-use std::time::Instant;
 use std::{env, fs};
 use uuid::Uuid;
 
 #[derive(PartialEq)]
 pub enum FileType {
     Lib,
-    Native,
     Asset,
     AssetIndex,
     Mc(String)
@@ -62,10 +59,7 @@ async fn main() -> anyhow::Result<()> {
 
     utils::makeFolders().await?;
     println!("URL: {}",url);
-    let start = Instant::now();
     DlMgr::getAndHandleInfo(&client, url).await?;
-    let duration = start.elapsed();
-    println!("Took: {:?}", duration);
     launchGame(getMcClient().unwrap())?;
     Ok(())
 }
@@ -136,7 +130,8 @@ fn launchGame(clientName:String)->anyhow::Result<()> {
         .status()?;
 
     if !status.success(){
-        bail!("java exited with {status}");
+        eprintln!("Java exited with {status}");
+        return Ok(())
     }
 
     Ok(())

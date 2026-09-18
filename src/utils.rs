@@ -18,20 +18,17 @@
     along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-use crate::{DlMgr, FileType};
+use crate::DlMgr::dlFile;
+use crate::FileType;
 use anyhow::Result;
 use indicatif::ProgressBar;
 use reqwest::Client;
 use serde_json::Value;
-use std::fs::File;
-use std::io::{Cursor, Write, stdin, stdout};
-use std::path::Path;
+use std::io::{Write, stdin, stdout};
 use std::sync::Arc;
-use std::{fs, io};
+use std::{env, fs};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
-use zip::ZipArchive;
-use crate::DlMgr::dlFile;
 
 pub async fn makeFolders() -> Result<()> {
     tokio::task::spawn_blocking(|| {
@@ -44,33 +41,6 @@ pub async fn makeFolders() -> Result<()> {
             fs::create_dir_all(format!("assets/objects/{:02x}", i))?;
         }
 
-        Ok(())
-    }).await?
-}
-
-pub async fn extract_native(bytes: Vec<u8>) -> Result<()> {
-    let out_dir = Path::new("natives/");
-
-    tokio::task::spawn_blocking(move || {
-        let mut archive = ZipArchive::new(Cursor::new(bytes))?;
-
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i)?;
-            let name = entry.name();
-            if entry.is_dir() || name.starts_with("META-INF/") {
-                continue;
-            }
-            let is_native = matches!(
-                Path::new(name).extension().and_then(|e| e.to_str()),
-                Some("dll") | Some("so") | Some("dylib")
-            );
-            if !is_native {
-                continue;
-            }
-            let file_name = Path::new(name).file_name().unwrap();
-            let mut out_file = File::create(out_dir.join(file_name))?;
-            io::copy(&mut entry, &mut out_file)?;
-        }
         Ok(())
     }).await?
 }
@@ -88,18 +58,15 @@ pub async fn getAssets(client: Client, downloaders: &mut Vec<JoinHandle<Result<(
     for (_, obj) in objs {
         let obj_hash = obj["hash"].as_str().unwrap();
         let url = format!("https://resources.download.minecraft.net/{}/{}", &obj_hash[..2], obj_hash);
-
-        downloaders.push(tokio::spawn(DlMgr::dlFile(client.clone(), url, FileType::Asset, semaphore.clone(), pb.clone())))
+        downloaders.push(tokio::spawn(dlFile(client.clone(), url, FileType::Asset, semaphore.clone(), pb.clone())))
     }
-
     Ok(())
-
 }
 
 pub fn getVer()->Result<String> {
     let mut input;
     loop {
-        print!("Version to download ({}): ","latest");
+        print!("Version to download (latest): ");
         stdout().flush()?;
         input = String::new();
         stdin().read_line(&mut input)?;
@@ -123,20 +90,16 @@ pub fn getLibraries(client: Client, downloaders: &mut Vec<JoinHandle<Result<()>>
             .to_string();
         let libSize = lib["downloads"]["artifact"]["size"].as_u64().unwrap_or(0);
 
-        let mut nativeNeedExtract = false;
         if let Some(rules) = lib["rules"].as_array() {
             let skip = rules.iter().any(|rule| {
-                (rule["action"] == "allow" && rule["os"]["name"]!="windows") || (url.contains("windows-arm64") || url.contains("windows-x86"))
+                (rule["action"] == "allow" && rule["os"]["name"]!=env::consts::OS) || (url.contains("windows-arm64") || url.contains("windows-x86"))
             });
             if skip {
                 continue;
             }
-            if url.contains("natives") {
-                nativeNeedExtract =true;
-            }
         }
         pb.inc_length(libSize);
-        let dl = tokio::spawn(dlFile(client.clone(), url, if nativeNeedExtract { FileType::Native } else { FileType::Lib }, semaphore.clone(), pb.clone()));
+        let dl = tokio::spawn(dlFile(client.clone(), url, FileType::Lib, semaphore.clone(), pb.clone()));
         downloaders.push(dl);
     }
 }
