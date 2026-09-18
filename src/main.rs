@@ -23,7 +23,6 @@
 mod DlMgr;
 mod utils;
 
-use anyhow::bail;
 use reqwest::{Client, ClientBuilder, tls};
 use std::ffi::OsStr;
 use std::path::Path;
@@ -41,7 +40,7 @@ pub enum FileType {
     Mc(String)
 }
 const VERSION:&str = env!("CARGO_PKG_VERSION");
-
+//Works till 1.19
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("Minecraft Client Manager v{}", VERSION);
@@ -112,10 +111,10 @@ fn launchGame(clientName:String)->anyhow::Result<()> {
         ])
         .args([
             // native library system properties
-            format!("-Djava.library.path={}", natives.join("java").display()),
-            format!("-Djna.tmpdir={}", natives.join("jna").display()),
-            format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", natives.join("lwjgl").display()),
-            format!("-Dio.netty.native.workdir={}", natives.join("netty").display()),
+            format!("-Djava.library.path={}", natives.display()),
+            format!("-Djna.tmpdir={}", natives.display()),
+            format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", natives.display()),
+            format!("-Dio.netty.native.workdir={}", natives.display()),
             format!("-Dminecraft.launcher.brand={}", LAUNCHER_BRAND),
             format!("-Dminecraft.launcher.version={}", VERSION)
         ])
@@ -136,7 +135,8 @@ fn launchGame(clientName:String)->anyhow::Result<()> {
         .status()?;
 
     if !status.success(){
-        bail!("java exited with {status}");
+        eprintln!("Java exited with {status}");
+        return Ok(())
     }
 
     Ok(())
