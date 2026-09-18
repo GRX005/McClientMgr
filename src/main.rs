@@ -42,7 +42,7 @@ const VERSION:&str = env!("CARGO_PKG_VERSION");
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("Minecraft Client Manager v{}", VERSION);
-    tempDel();
+    //tempDel();
     if let Some(clientName) = getMcClient() {
         launchGame(clientName)?;
         return Ok(())
@@ -151,14 +151,14 @@ fn getMcClient() -> Option<String> {
     Some(jarName.to_string_lossy().into_owned())
 }
 
-pub fn tempDel() {
-    if let Some(mcClient)=getMcClient() {
-        fs::remove_dir_all("libraries").unwrap();
-        fs::remove_dir_all("natives").unwrap();
-        fs::remove_dir_all("assets/indexes").unwrap();
-        fs::remove_dir_all("assets/objects").unwrap();
-
-        fs::remove_file(mcClient).unwrap();
-    }
-
-}
+// pub fn tempDel() {
+//     if let Some(mcClient)=getMcClient() {
+//         fs::remove_dir_all("libraries").unwrap();
+//         fs::remove_dir_all("natives").unwrap();
+//         fs::remove_dir_all("assets/indexes").unwrap();
+//         fs::remove_dir_all("assets/objects").unwrap();
+//
+//         fs::remove_file(mcClient).unwrap();
+//     }
+//
+// }
